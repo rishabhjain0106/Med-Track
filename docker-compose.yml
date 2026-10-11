@@ -1,0 +1,77 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: careos_postgres
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgrespassword
+      POSTGRES_DB: medtrack
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d medtrack"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+    networks:
+      - careos_net
+
+  redis:
+    image: redis:7-alpine
+    container_name: careos_redis
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+    networks:
+      - careos_net
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: careos_backend
+    environment:
+      DATABASE_URL: postgresql://postgres:postgrespassword@postgres:5432/medtrack
+      REDIS_URL: redis://redis:6379/0
+      SECRET_KEY: careos-super-secret-key-production-2026-secure
+      BLOOD_DATA_SOURCE: local
+      RESERVATION_EXPIRY_MINUTES: 30
+      CACHE_DEFAULT_TTL_SECONDS: 45
+    ports:
+      - "8000:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - careos_net
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: careos_frontend
+    ports:
+      - "3000:80"
+    depends_on:
+      - backend
+    restart: unless-stopped
+    networks:
+      - careos_net
+
+networks:
+  careos_net:
+    driver: bridge
+
+volumes:
+  postgres_data:
